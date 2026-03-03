@@ -105,6 +105,10 @@
     <ClInclude Include="DiscordSDK\src\serialization.h" />
     <ClInclude Include="image.h" />
     <ClInclude Include="auth\AuthlyX.h" />
+    <ClInclude Include="ShadowxCheats.h" />
+    <ClInclude Include="Memory.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="resource1.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\imgui.cpp">
@@ -154,5 +158,11 @@
     <None Include="imgui.ini" />
     <None Include="build_win32.bat" />
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="BRUUUH EXTERNAL C++.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\..\C#\src\BRUUUH_NO_BG.ico" />
   </ItemGroup>
 </Project>

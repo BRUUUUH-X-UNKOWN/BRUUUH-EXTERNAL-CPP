@@ -82,8 +82,8 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>..\EXE</OutDir>
     <IntDir>$(ProjectDir)$(Configuration)\</IntDir>
-    <IncludePath>C:\Users\user\Desktop\BRUUUH EXTERNAL\C++\sdk\INCLUDE;C:\Users\user\Desktop\BRUUUH EXTERNAL\C++\freetype\include\freetype;C:\Users\user\Desktop\BRUUUH EXTERNAL\C++\freetype\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\user\Desktop\BRUUUH EXTERNAL\C++\sdk\Lib\x64;C:\Users\user\Desktop\BRUUUH EXTERNAL\C++\freetype\win64;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Users\USER\Desktop\BRUUUH EXTERNAL\BRUUUH EXTERNAL\C++\json;C:\Users\USER\Desktop\BRUUUH EXTERNAL\BRUUUH EXTERNAL\C++\sdk\INCLUDE;C:\Users\USER\Desktop\BRUUUH EXTERNAL\BRUUUH EXTERNAL\C++\freetype\include\freetype;C:\Users\USER\Desktop\BRUUUH EXTERNAL\BRUUUH EXTERNAL\C++\freetype\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\USER\Desktop\BRUUUH EXTERNAL\BRUUUH EXTERNAL\C++\sdk\Lib\x64;C:\Users\USER\Desktop\BRUUUH EXTERNAL\BRUUUH EXTERNAL\C++\freetype\win64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -215,6 +215,10 @@
     <ClInclude Include="include\dx\dx.h" />
     <ClInclude Include="include\dx\handle.h" />
     <ClInclude Include="main.h" />
+    <ClInclude Include="Memory.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="resource1.h" />
+    <ClInclude Include="ShadowxCheats.h" />
     <ClInclude Include="texture.h" />
   </ItemGroup>
   <ItemGroup>
@@ -243,6 +247,12 @@
     <None Include="build_win32.bat" />
     <None Include="imgui.ini" />
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="BRUUUH EXTERNAL C++.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\..\C#\src\BRUUUH_NO_BG.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

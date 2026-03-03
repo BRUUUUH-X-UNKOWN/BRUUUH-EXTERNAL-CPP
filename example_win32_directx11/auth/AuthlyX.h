@@ -2,7 +2,6 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shellapi.h>
 #include <winhttp.h>
 #include <sddl.h>
 #include <iphlpapi.h>
@@ -15,6 +14,8 @@
 #include <iomanip>
 #include <iostream>
 #include <shlobj.h>
+#include <ctime>
+#include <cmath>
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -84,7 +85,7 @@ private:
     }
 };
 
-bool AuthlyLogger::Enabled = true;
+bool AuthlyLogger::Enabled = false;
 std::string AuthlyLogger::AppName = "AuthlyX";
 
 class AuthlyX {
@@ -111,6 +112,7 @@ public:
         std::string licenseKey;
         std::string subscription;
         std::string expiryDate;
+        int daysLeft = 0;
         std::string lastLogin;
         std::string hwid;
         std::string ipAddress;
@@ -151,8 +153,8 @@ public:
     ChatMessages chatMessages;
 
     AuthlyX(const std::string& ownerId, const std::string& appName,
-        const std::string& version, const std::string& secret)
-        : ownerId(ownerId), appName(appName), version(version), secret(secret) {
+        const std::string& version, const std::string& secret, bool enableLogging = false)
+        : ownerId(ownerId), appName(appName), version(version), secret(secret), loggingEnabled(enableLogging) {
 
         if (ownerId.empty() || appName.empty() || version.empty() || secret.empty()) {
             Error("Invalid application credentials provided.");
@@ -161,8 +163,11 @@ public:
         }
 
         AuthlyLogger::AppName = appName;
+        AuthlyLogger::Enabled = enableLogging;
         CalculateApplicationHash();
     }
+
+
 
     bool Init() {
         std::map<std::string, std::string> payload = {
@@ -176,65 +181,78 @@ public:
         std::string responseStr = PostJson("init", BuildJson(payload));
 
         if (responseStr.empty()) {
-            response.message = "Connection failed - check internet connection";
+            if (response.message.empty()) {
+                response.message = "No Internet Connection. If you have an active internet connection, please ensure your network profile is set to Public.";
+            }
             Error("Initialization failed: " + response.message);
             return false;
         }
 
-       std::string errorCode = ExtractJsonValue(responseStr, "code");
-        if (errorCode == "INVALID_VERSION") {
-            bool autoUpdateEnabled = false;
-            size_t autoUpdatePos = responseStr.find("\"auto_update_enabled\":");
+        std::string errorCode = ExtractJsonValue(responseStr, "code");
+        if (errorCode == "INVALID_VERSION" || errorCode == "OUTDATED_VERSION") {
+            std::string autoUpdateEnabledStr = ExtractJsonValue(responseStr, "auto_update_enabled");
             std::string downloadUrl = ExtractJsonValue(responseStr, "auto_update_download_url");
-            
-            if (autoUpdatePos != std::string::npos) {
-                size_t valueStart = responseStr.find(':', autoUpdatePos) + 1;
-                std::string valueStr = responseStr.substr(valueStart, 10);
-                if (valueStr.find("true") != std::string::npos) {
-                    autoUpdateEnabled = true;
-                }
-            } else {
+            std::string errorMessage = ExtractJsonValue(responseStr, "message");
+
+            bool autoUpdateEnabled = (autoUpdateEnabledStr == "true");
+
+            if (!autoUpdateEnabled || downloadUrl.empty()) {
                 size_t updatePos = responseStr.find("\"update\":");
                 if (updatePos != std::string::npos) {
-                    size_t downloadUrlPos = responseStr.find("\"download_url\":", updatePos);
-                    if (downloadUrlPos != std::string::npos) {
-                        std::string updateDownloadUrl = ExtractJsonValue(responseStr.substr(updatePos), "download_url");
-                        if (!updateDownloadUrl.empty()) {
-                            autoUpdateEnabled = true;
-                            downloadUrl = updateDownloadUrl;
-                            AuthlyLogger::Log("[AUTHLY_DEBUG] auto_update_enabled not found, but update object with download_url exists - assuming enabled");
-                        }
+                    std::string nestedObj = responseStr.substr(updatePos);
+                    std::string nestedUrl = ExtractJsonValue(nestedObj, "download_url");
+                    if (!nestedUrl.empty()) {
+                        autoUpdateEnabled = true;
+                        downloadUrl = nestedUrl;
                     }
                 }
             }
-            
-            std::string errorMessage = ExtractJsonValue(responseStr, "message");
+
             if (errorMessage.empty()) {
-                errorMessage = "Outdated Version";
+                errorMessage = (errorCode == "OUTDATED_VERSION") ? "A new version is available." : "Invalid version.";
             }
-            
-            AuthlyLogger::Log("[AUTHLY] Version is outdated: " + errorMessage);
-            AuthlyLogger::Log("[AUTHLY] auto_update_enabled: " + std::string(autoUpdateEnabled ? "true" : "false") + ", download_url: " + downloadUrl);
-            
-            if (!autoUpdateEnabled) {
-                AuthlyLogger::Log("[AUTHLY] Auto-update is disabled. Application will close in 5 seconds...");
-                Sleep(5000);
-                ExitProcess(1);
-                return false;
-            } else {
-                std::cout << "\n1. Download Latest" << std::endl;
+
+            if (autoUpdateEnabled && !downloadUrl.empty()) {
+                AuthlyLogger::Log("[UPDATE] Version outdated. Showing manual download menu.");
+
+                // Ensure we have a console to show the menu (critical for GUI apps/DLLs)
+                bool consoleAllocated = false;
+                if (GetConsoleWindow() == NULL) {
+                    AllocConsole();
+                    FILE* fDummy;
+                    freopen_s(&fDummy, "CONIN$", "r", stdin);
+                    freopen_s(&fDummy, "CONOUT$", "w", stdout);
+                    freopen_s(&fDummy, "CONOUT$", "w", stderr);
+                    consoleAllocated = true;
+                }
+
+                std::cout << "\n" << std::string(50, '=') << std::endl;
+                std::cout << "UPDATE AVAILABLE" << std::endl;
+                std::cout << std::string(50, '=') << std::endl;
+                std::cout << "Message: " << errorMessage << std::endl;
+                std::cout << "\n1. Download the latest version" << std::endl;
                 std::cout << "2. Exit" << std::endl;
-                std::cout << "\nSelect an option (1 or 2): ";
-                
+                std::cout << "\nSelect an option (1-2): ";
+
                 std::string choice;
                 std::getline(std::cin, choice);
-                
-                if (choice == "1" && !downloadUrl.empty()) {
+
+                if (choice == "1") {
                     std::wstring wideUrl(downloadUrl.begin(), downloadUrl.end());
                     ShellExecuteW(NULL, L"open", wideUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
-                    AuthlyLogger::Log("[AUTHLY] Opening download URL in browser...");
+                    AuthlyLogger::Log("[UPDATE] Redirecting user to download URL...");
+                    std::cout << "\nOpening download link in your browser..." << std::endl;
+                    Sleep(2000);
                 }
-                
+
+                if (consoleAllocated) FreeConsole();
+                ExitProcess(1);
+                return false;
+            }
+            else {
+                AuthlyLogger::Log("[UPDATE] Outdated version detected, using Error window.");
+                Error("OUTDATED VERSION: " + errorMessage);
+                Sleep(5000);
                 ExitProcess(1);
                 return false;
             }
@@ -246,9 +264,9 @@ public:
             sessionId = ExtractJsonValue(responseStr, "session_id");
             initialized = true;
             AuthlyLogger::Log("[INIT] Successfully initialized AuthlyX session");
-            
+
             LoadUpdateData(responseStr);
-            
+
             if (updateData.available && updateData.forceUpdate) {
                 AuthlyLogger::Log("[UPDATE] Force update required. Opening download URL: " + updateData.downloadUrl);
                 if (!updateData.downloadUrl.empty()) {
@@ -270,7 +288,7 @@ public:
                     }
                 }
             }
-            
+
             Error("Initialization failed: " + response.message);
         }
 
@@ -336,6 +354,38 @@ public:
         return response.success;
     }
 
+    bool ExtendTime(const std::string& username, const std::string& licenseKey) {
+        CheckInit();
+
+        std::map<std::string, std::string> payload = {
+            {"session_id", sessionId},
+            {"username", username},
+            {"license_key", licenseKey},
+            {"hwid", GetSystemSid()},
+            {"ip", GetPublicIp()}
+        };
+
+        std::string responseStr = PostJson("extend", BuildJson(payload));
+        ParseResponse(responseStr);
+
+        return response.success;
+    }
+
+    bool DeviceLogin(const std::string& deviceType, const std::string& deviceId) {
+        CheckInit();
+
+        std::map<std::string, std::string> payload = {
+            {"session_id", sessionId},
+            {"device_type", deviceType},
+            {"device_id", deviceId}
+        };
+
+        std::string responseStr = PostJson("device-auth", BuildJson(payload));
+        ParseResponse(responseStr);
+
+        return response.success;
+    }
+
     std::string GetVariable(const std::string& varKey) {
         CheckInit();
 
@@ -366,6 +416,7 @@ public:
     }
 
     bool Log(const std::string& message) {
+        if (!loggingEnabled) return false;
         CheckInit();
 
         std::map<std::string, std::string> payload = {
@@ -381,81 +432,22 @@ public:
 
     bool ValidateSession() {
         if (!initialized || sessionId.empty()) {
-            AuthlyLogger::Log("[VALIDATE_SESSION] Not initialized or session ID is empty");
             return false;
         }
 
-        try {
-            AuthlyLogger::Log("[VALIDATE_SESSION] Validating session: " + sessionId);
+        std::map<std::string, std::string> payload = {
+            {"session_id", sessionId}
+        };
 
-            std::map<std::string, std::string> payload = {
-                {"session_id", sessionId}
-            };
+        std::string responseStr = PostJson("validate-session", BuildJson(payload));
+        ParseResponse(responseStr);
 
-            std::string responseStr = PostJson("validate-session", BuildJson(payload));
-            ParseResponse(responseStr);
-
-            bool isValid = response.success && (response.message.find("valid") != std::string::npos || response.message.find("Valid") != std::string::npos);
-            AuthlyLogger::Log("[VALIDATE_SESSION] Result: " + std::string(isValid ? "true" : "false") + ", Success: " + std::string(response.success ? "true" : "false") + ", Message: " + response.message);
-
-            return isValid;
-        }
-        catch (...) {
-            AuthlyLogger::Log("[VALIDATE_SESSION] Exception occurred");
-            return false;
-        }
+        return response.success && (response.message.find("valid") != std::string::npos || response.message.find("Valid") != std::string::npos);
     }
 
-    std::string GetSessionId() const { return sessionId; }
-    std::string GetCurrentApplicationHash() const { return applicationHash; }
-    bool IsInitialized() const { return initialized; }
-    std::string GetAppName() const { return appName; }
-
-    bool IsUpdateAvailable() const { return updateData.available; }
-    UpdateData GetUpdateInfo() const { return updateData; }
-
-    std::string GetChats(const std::string& channelName)
-    {
-        return "No chats in channel: " + channelName;
-    }
-
-    void SendChat(const std::string& message)
-    {
-        SendChat(message, "global");
-    }
-
-    void SendChat(const std::string& message, const std::string& channelName)
-    {
-        std::cout << "[" << channelName << "] " << message << std::endl;
-    }
-
-
-private:
-    std::string BuildJson(const std::map<std::string, std::string>& data) {
-        std::string json = "{";
-        for (auto it = data.begin(); it != data.end(); ++it) {
-            if (it != data.begin()) json += ",";
-            json += "\"" + it->first + "\":\"" + EscapeJsonString(it->second) + "\"";
-        }
-        json += "}";
-        return json;
-    }
-
-    std::string EscapeJsonString(const std::string& input) {
-        std::string output;
-        for (char c : input) {
-            switch (c) {
-            case '"': output += "\\\""; break;
-            case '\\': output += "\\\\"; break;
-            case '\b': output += "\\b"; break;
-            case '\f': output += "\\f"; break;
-            case '\n': output += "\\n"; break;
-            case '\r': output += "\\r"; break;
-            case '\t': output += "\\t"; break;
-            default: output += c; break;
-            }
-        }
-        return output;
+    void EnableLogging(bool enable) {
+        loggingEnabled = enable;
+        AuthlyLogger::Enabled = enable;
     }
 
     std::string PostJson(const std::string& endpoint, const std::string& jsonPayload) {
@@ -470,7 +462,7 @@ private:
         if (!hConnect) {
             WinHttpCloseHandle(hSession);
             response.success = false;
-            response.message = "Failed to connect to server";
+            response.message = "No Internet Connection. If you have an active internet connection, please ensure your network profile is set to Public.";
             return "";
         }
 
@@ -496,7 +488,7 @@ private:
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
             response.success = false;
-            response.message = "Failed to send HTTP request";
+            response.message = "No Internet Connection. If you have an active internet connection, please ensure your network profile is set to Public.";
             return "";
         }
 
@@ -506,7 +498,7 @@ private:
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
             response.success = false;
-            response.message = "Failed to receive HTTP response";
+            response.message = "No Internet Connection. If you have an active internet connection, please ensure your network profile is set to Public.";
             return "";
         }
 
@@ -705,19 +697,27 @@ private:
     }
 
     std::string ExtractJsonValue(const std::string& json, const std::string& key) {
-        std::string searchKey = "\"" + key + "\":\"";
-        size_t pos = json.find(searchKey);
-        if (pos == std::string::npos) {
-            searchKey = "\"" + key + "\":";
-            pos = json.find(searchKey);
-            if (pos == std::string::npos) return "";
+        size_t keyPos = json.find("\"" + key + "\"");
+        if (keyPos == std::string::npos) return "";
+
+        size_t colonPos = json.find(":", keyPos);
+        if (colonPos == std::string::npos) return "";
+
+        size_t valStart = json.find_first_not_of(" \t\n\r", colonPos + 1);
+        if (valStart == std::string::npos) return "";
+
+        if (json[valStart] == '"') {
+            // Case 1: String value
+            size_t valEnd = json.find('"', valStart + 1);
+            if (valEnd == std::string::npos) return "";
+            return json.substr(valStart + 1, valEnd - valStart - 1);
         }
-
-        size_t start = pos + searchKey.length();
-        size_t end = json.find('"', start);
-        if (end == std::string::npos) return "";
-
-        return json.substr(start, end - start);
+        else {
+            // Case 2: Primitive (bool, number, null)
+            size_t valEnd = json.find_first_of(",} \t\n\r", valStart);
+            if (valEnd == std::string::npos) return json.substr(valStart);
+            return json.substr(valStart, valEnd - valStart);
+        }
     }
 
     void ParseResponse(const std::string& jsonResponse) {
@@ -772,6 +772,7 @@ private:
         userData.expiryDate = ExtractJsonValue(jsonResponse, "expiry_date");
         userData.lastLogin = ExtractJsonValue(jsonResponse, "last_login");
         userData.registeredAt = ExtractJsonValue(jsonResponse, "created_at");
+        userData.daysLeft = ComputeDaysLeft(userData.expiryDate);
         userData.hwid = GetSystemSid();
         userData.ipAddress = GetPublicIp();
     }
@@ -797,7 +798,7 @@ private:
             size_t braceCount = 0;
             size_t updateObjStart = jsonResponse.find('{', updateStart);
             size_t updateObjEnd = updateObjStart;
-            
+
             for (size_t i = updateObjStart; i < jsonResponse.length(); i++) {
                 if (jsonResponse[i] == '{') braceCount++;
                 if (jsonResponse[i] == '}') braceCount--;
@@ -808,13 +809,13 @@ private:
             }
 
             std::string updateObj = jsonResponse.substr(updateObjStart, updateObjEnd - updateObjStart);
-            
+
             updateData.available = (ExtractJsonValue(updateObj, "available") == "true");
             updateData.latestVersion = ExtractJsonValue(updateObj, "latest_version");
             updateData.downloadUrl = ExtractJsonValue(updateObj, "download_url");
             updateData.forceUpdate = (ExtractJsonValue(updateObj, "force_update") == "true");
             updateData.changelog = ExtractJsonValue(updateObj, "changelog");
-            
+
             if (updateData.available) {
                 AuthlyLogger::Log("[UPDATE] Update available: " + updateData.latestVersion + ", Force: " + (updateData.forceUpdate ? "true" : "false"));
             }
@@ -835,7 +836,7 @@ private:
             }
 
             chatMessages.channelName = ExtractJsonValue(jsonResponse, "channel_name");
-            
+
             size_t messagesStart = jsonResponse.find("\"messages\":[", dataStart);
             if (messagesStart == std::string::npos) {
                 chatMessages.messages.clear();
@@ -844,11 +845,11 @@ private:
             }
 
             chatMessages.messages.clear();
-            
+
             size_t bracketCount = 0;
             size_t arrayStart = jsonResponse.find('[', messagesStart);
             size_t pos = arrayStart + 1;
-            
+
             while (pos < jsonResponse.length()) {
                 if (jsonResponse[pos] == '[') bracketCount++;
                 if (jsonResponse[pos] == ']') {
@@ -868,7 +869,7 @@ private:
                             }
                         }
                     }
-                    
+
                     std::string msgObj = jsonResponse.substr(pos, objEnd - pos);
                     ChatMessage msg;
                     msg.id = std::stoi(ExtractJsonValue(msgObj, "id"));
@@ -876,13 +877,14 @@ private:
                     msg.message = ExtractJsonValue(msgObj, "message");
                     msg.createdAt = ExtractJsonValue(msgObj, "created_at");
                     chatMessages.messages.push_back(msg);
-                    
+
                     pos = objEnd;
-                } else {
+                }
+                else {
                     pos++;
                 }
             }
-            
+
             chatMessages.count = chatMessages.messages.size();
         }
         catch (...) {
@@ -915,4 +917,86 @@ private:
             CloseHandle(pi.hThread);
         }
     }
+
+    int ComputeDaysLeft(const std::string& expiryDate) {
+        if (expiryDate.empty()) return 0;
+        std::string ts = expiryDate;
+        if (ts.size() >= 19) {
+            ts = ts.substr(0, 19);
+        }
+        std::tm tm = {};
+        std::istringstream ss(ts);
+        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+        if (ss.fail()) return 0;
+        time_t expiry = _mkgmtime(&tm);
+        if (expiry <= 0) return 0;
+        time_t now = time(nullptr);
+        double diff = difftime(expiry, now);
+        int days = static_cast<int>(std::ceil(diff / 86400.0));
+        return days < 0 ? 0 : days;
+    }
+
+    std::string GetSessionId() const { return sessionId; }
+    std::string GetCurrentApplicationHash() const { return applicationHash; }
+    bool IsInitialized() const { return initialized; }
+    std::string GetAppName() const { return appName; }
+
+    bool IsUpdateAvailable() const { return updateData.available; }
+    UpdateData GetUpdateInfo() const { return updateData; }
+
+    std::string GetChats(const std::string& channelName) {
+        if (channelName.empty()) return "Channel cannot be empty";
+
+        std::map<std::string, std::string> payload = {
+            {"session_id", sessionId},
+            {"channel_name", channelName},
+            {"limit", "100"}
+        };
+        return PostJson("chats/get", BuildJson(payload));
+    }
+
+    void SendChat(const std::string& message) {
+        SendChat(message, "global");
+    }
+
+    void SendChat(const std::string& message, const std::string& channelName) {
+        if (message.empty() || channelName.empty()) return;
+
+        std::map<std::string, std::string> payload = {
+            {"session_id", sessionId},
+            {"channel_name", channelName},
+            {"message", message}
+        };
+        PostJson("chats/send", BuildJson(payload));
+    }
+
+private:
+    std::string BuildJson(const std::map<std::string, std::string>& data) {
+        std::string json = "{";
+        for (auto it = data.begin(); it != data.end(); ++it) {
+            if (it != data.begin()) json += ",";
+            json += "\"" + it->first + "\":\"" + EscapeJsonString(it->second) + "\"";
+        }
+        json += "}";
+        return json;
+    }
+
+    std::string EscapeJsonString(const std::string& input) {
+        std::string output;
+        for (char c : input) {
+            switch (c) {
+            case '"': output += "\\\""; break;
+            case '\\': output += "\\\\"; break;
+            case '\b': output += "\\b"; break;
+            case '\f': output += "\\f"; break;
+            case '\n': output += "\\n"; break;
+            case '\r': output += "\\r"; break;
+            case '\t': output += "\\t"; break;
+            default: output += c; break;
+            }
+        }
+        return output;
+    }
+
+    bool loggingEnabled = false;
 };
